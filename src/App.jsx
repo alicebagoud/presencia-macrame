@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
+import { CATEGORIES, INITIAL_PRODUCTS } from "./data/products";
 
 // --- Íconos Nativos en SVG (Sin dependencias externas que fallen) ---
 const Heart = ({ size = 20, className = "", fill = "none" }) => (
@@ -149,106 +151,6 @@ const Phone = ({ size = 20, className = "" }) => (
   </svg>
 );
 
-// --- Datos del Catálogo ---
-const CATEGORIES = [
-  "Todos",
-  "Llaveros",
-  "Portavasos",
-  "Collar Mascota",
-  "Tapiz",
-  "Portamateras",
-  "Aretes",
-  "Espejos",
-];
-
-const INITIAL_PRODUCTS = [
-  {
-    id: 1,
-    name: 'Tapiz Bohemio "Amanecer"',
-    price: 120000,
-    category: "Tapiz",
-    image:
-      "https://images.unsplash.com/photo-1522758971460-1d21fac222d1?auto=format&fit=crop&q=80&w=600",
-    description:
-      "Hermoso tapiz tejido a mano con hilo de algodón 100% natural, ideal para dar calidez a tu sala o habitación.",
-  },
-  {
-    id: 2,
-    name: "Portamateras Colgante",
-    price: 45000,
-    category: "Portamateras",
-    image:
-      "https://images.unsplash.com/photo-1615800098779-1be32e60cca3?auto=format&fit=crop&q=80&w=600",
-    description:
-      "Soporte para plantas con nudos intrincados. Dale vida vertical a tus espacios favoritos.",
-  },
-  {
-    id: 3,
-    name: "Set de 4 Portavasos",
-    price: 30000,
-    category: "Portavasos",
-    image:
-      "https://images.unsplash.com/photo-1620078023199-31e3d64388e6?auto=format&fit=crop&q=80&w=600",
-    description:
-      "Portavasos circulares con flecos bohemios. Protegen tus superficies y decoran tu mesa.",
-  },
-  {
-    id: 4,
-    name: "Llavero Hoja de Otoño",
-    price: 15000,
-    category: "Llaveros",
-    image:
-      "https://images.unsplash.com/photo-1620078023199-31e3d64388e6?auto=format&fit=crop&q=80&w=600",
-    description:
-      "Llavero con diseño de hoja tejida, suave y resistente para tus llaves o bolso.",
-  },
-  {
-    id: 5,
-    name: 'Collar para Mascota "Boho"',
-    price: 35000,
-    category: "Collar Mascota",
-    image:
-      "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=600",
-    description:
-      "Collar tejido a mano súper resistente, cómodo y con estilo para consentir a tu mascota.",
-  },
-  {
-    id: 6,
-    name: "Aretes Mandala",
-    price: 20000,
-    category: "Aretes",
-    image:
-      "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=600",
-    description:
-      "Aretes artesanales ligeros y elegantes en hilo de algodón fino.",
-  },
-];
-
-const INITIAL_REVIEWS = {
-  1: [
-    {
-      id: 101,
-      author: "María Camila",
-      rating: 5,
-      text: "¡El tapiz superó mis expectativas! Los nudos están perfectos.",
-    },
-    {
-      id: 102,
-      author: "Juan Pablo",
-      rating: 5,
-      text: "Llegó en perfecto estado, súper recomendado.",
-    },
-  ],
-  2: [
-    {
-      id: 103,
-      author: "Laura Gómez",
-      rating: 5,
-      text: "Mi planta quedó divina colgada en la ventana.",
-    },
-  ],
-};
-
 const formatPrice = (price) => {
   return new Intl.NumberFormat("es-CO", {
     style: "currency",
@@ -371,6 +273,7 @@ const ProductCard = ({
   onToggleFavorite,
   reviews,
   onAddReview,
+  onAddToCart,
 }) => {
   return (
     <div className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col h-full border border-[#F2EDE4]">
@@ -406,15 +309,13 @@ const ProductCard = ({
           {formatPrice(product.price)}
         </p>
 
-        <a
-          href={getWhatsAppLink(product.name)}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={() => onAddToCart(product)}
           className="flex items-center justify-center gap-2 w-full py-2.5 bg-vinotinto-oscuro text-crema rounded-xl font-semibold hover:bg-crema hover:text-vinotinto-oscuro transition shadow-sm text-sm"
         >
           <MessageCircle size={18} />
-          Cotizar / Comprar
-        </a>
+          Añadir al Carrito
+        </button>
 
         <ReviewSection
           productId={product.id}
@@ -428,10 +329,67 @@ const ProductCard = ({
 
 // --- Componente Principal ---
 export default function App() {
+  // 1. Memoria del carrito (Inicia vacío)
+  const [carrito, setCarrito] = useState([]);
+  // Cargar reseñas reales guardadas en Supabase al cargar la página
+  useEffect(() => {
+    const descargarResenas = async () => {
+      const { data, error } = await supabase.from("reviews").select("*");
+      if (!error && data) {
+        // Mantenemos las iniciales de prueba y le sumamos las reales de Supabase
+        const agrupadas = {};
+
+        data.forEach((r) => {
+          if (!agrupadas[r.product_id]) {
+            agrupadas[r.product_id] = [];
+          }
+          agrupadas[r.product_id].push({
+            id: r.id,
+            author: r.author,
+            rating: r.rating,
+            text: r.text,
+          });
+        });
+
+        setReviews(agrupadas);
+      }
+    };
+
+    descargarResenas();
+  }, []);
+
+  // 2. Función para añadir un producto al carrito
+  const agregarAlCarrito = (producto) => {
+    setCarrito([...carrito, producto]);
+    alert("¡Agregado al carrito! 🌿");
+  };
+
+  // 3. Función para compilar el mensaje y abrir WhatsApp
+  // Función para compilar el mensaje consolidado y abrir WhatsApp
+  const enviarPedido = () => {
+    if (carrito.length === 0) return alert("Tu carrito está vacío.");
+
+    let mensaje =
+      "¡Hola Presencia Macramé! 🌿 Quiero realizar el siguiente pedido:\n\n";
+    let total = 0;
+
+    carrito.forEach((item) => {
+      // Usamos item.name porque así está definido en tu catálogo
+      mensaje += `- 1x ${item.name} (${formatPrice(item.price)})\n`;
+      total += item.price;
+    });
+
+    mensaje += `\nTotal estimado: ${formatPrice(total)}\nQuedo atenta para acordar el pago y envío.`;
+
+    const numero = "573206940028"; // Tu número real con indicativo
+    const url = `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, "_blank");
+  };
+
   const [activeCategory, setActiveCategory] = useState("Todos");
   const [favorites, setFavorites] = useState([]);
   const [isFavOpen, setIsFavOpen] = useState(false);
-  const [reviews, setReviews] = useState(INITIAL_REVIEWS);
+  const [reviews, setReviews] = useState({});
 
   const filteredProducts =
     activeCategory === "Todos"
@@ -450,12 +408,30 @@ export default function App() {
     );
   };
 
-  const handleAddReview = (productId, newReview) => {
-    const reviewWithId = { ...newReview, id: Date.now() };
+  const handleAddReview = async (productId, newReview) => {
+    // Intentamos guardar en Supabase
+    const { data, error } = await supabase.from("reviews").insert([
+      {
+        product_id: productId,
+        author: newReview.author,
+        rating: newReview.rating,
+        text: newReview.text,
+      },
+    ]);
+
+    // Si Supabase devuelve un error (ej. permisos o tabla inexistente)
+    if (error) {
+      console.error("Detalle del error:", error);
+      alert(`No se pudo guardar la reseña: ${error.message}`);
+      return;
+    }
+
+    // Si todo sale bien, actualizamos el estado local
     setReviews((prev) => ({
       ...prev,
-      [productId]: [...(prev[productId] || []), reviewWithId],
+      [productId]: [...(prev[productId] || []), newReview],
     }));
+    alert("¡Reseña guardada con éxito en Supabase!");
   };
 
   return (
@@ -547,9 +523,19 @@ export default function App() {
               onToggleFavorite={toggleFavorite}
               reviews={reviews[product.id] || []}
               onAddReview={handleAddReview}
+              onAddToCart={agregarAlCarrito}
             />
           ))}
         </div>
+        {/* Botón flotante del Carrito */}
+        {carrito.length > 0 && (
+          <button
+            onClick={enviarPedido}
+            className="fixed bottom-6 right-6 bg-vinotinto text-crema px-6 py-4 rounded-full font-bold shadow-2xl hover:scale-105 transition-all z-50 flex items-center gap-2 border-2 border-crema"
+          >
+            🛒 Enviar Pedido ({carrito.length})
+          </button>
+        )}
       </main>
 
       {/* Footer */}
